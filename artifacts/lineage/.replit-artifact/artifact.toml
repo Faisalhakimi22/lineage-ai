@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Lineage"
+description = "Lineage traces a viral claim back to where it actually originated, shows how it mutated as it spread, and delivers a calm, origin-blaming correction instead of accusing whoever shared it. Built for a UNESCO / Smart City hackathon on misinformation and media literacy."
+version = "1.0.0"
+id = "artifacts/lineage"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18546
+
+[services.development]
+run = "pnpm --filter @workspace/lineage run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lineage", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/lineage/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18546"
+BASE_PATH = "/"

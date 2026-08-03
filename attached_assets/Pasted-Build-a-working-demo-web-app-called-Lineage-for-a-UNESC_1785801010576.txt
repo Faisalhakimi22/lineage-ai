@@ -1,0 +1,135 @@
+Build a working demo web app called "Lineage" for a UNESCO / Smart City hackathon on
+misinformation and media literacy. Read this whole spec before writing code, then build
+in the numbered order at the bottom.
+
+## ONE-LINE CONCEPT
+Lineage doesn't tell you what's true. It traces a *claim* back to where it actually
+came from — even after the content has been screenshotted and reworded — shows how the
+claim mutated on the way, and corrects it by blaming the ORIGIN, never the person who
+sent it. Framing everywhere: "AI that doesn't decide what's true for you — it shows you
+where a claim came from so you can judge it yourself."
+
+## WHY THIS SCOPE (do not expand it)
+This is a hackathon demo, not a research system. Build exactly the flow below and make
+it flawless. Do NOT build: user accounts, a temporal graph neural net, a live web
+crawler, or any "predict this person's future bias" feature. Those are out of scope and
+will break the demo.
+
+## STACK (keep it boring and portable)
+- Backend: Python + FastAPI
+- Embeddings: sentence-transformers, model "all-MiniLM-L6-v2", loaded locally at startup
+  (must work with NO internet — this is critical)
+- Matching: cosine similarity over pre-computed seed embeddings
+- OCR: pytesseract (with a clear README note on installing the tesseract binary)
+- DB: a single seed JSON file loaded into memory. No Postgres needed.
+- Optional LLM polish: Anthropic API, ONLY if ANTHROPIC_API_KEY env var is set. If it's
+  missing, everything must still work via templates/heuristics. Never hard-depend on it.
+- Frontend: React + Vite + Tailwind. Lineage trail drawn with "reactflow". Charts/bars
+  as plain styled divs (no heavy chart lib).
+- One-command run: a `make dev` or root README with exactly two commands (backend, frontend).
+
+## CORE PIPELINE (POST /analyze)
+Input: either { "text": "..." } as JSON, or an uploaded image (multipart). Steps:
+1. If image → OCR to text via pytesseract.
+2. EXTRACT the atomic claim from the messy text. If ANTHROPIC_API_KEY is set, use one
+   Claude call to return the single core factual claim as a short sentence. If not, use
+   a heuristic fallback (strip emojis/URLs, take the longest declarative sentence).
+   Normalize so wording differences ("caused by India", "India's fault", "not local")
+   collapse toward the same core claim.
+3. EMBED the extracted claim, cosine-match against all seed claims (compare against the
+   canonical_claim AND every alias, take the max). Return top match + score.
+4. If score >= 0.55 → return that seed's full lineage + nutrition label + messenger-safe
+   correction. If below threshold → return a graceful "no known lineage yet" response
+   that still gives the empowerment framing + generic self-check steps (pause, trace to
+   origin, reverse image search, go to primary source).
+
+## RESPONSE SHAPE
+Return: extracted_claim, matched (bool), match_score, verdict, origin{...},
+mutation_chain[...], nutrition_label{...}, messenger_safe_correction (string),
+self_check_steps[...].
+
+The messenger_safe_correction MUST attribute to origin, e.g.:
+"This started as a real event/article and got changed as it was shared. Whoever sent it
+to you probably didn't know it had been altered." NEVER phrase it as the sender lying.
+
+## SEED DATA (seeds.json) — schema per claim:
+{
+  "id", "canonical_claim", "aliases": [strings],
+  "verdict": "false" | "misleading" | "missing_context" | "true",
+  "topic": "climate_energy" | "civic_lahore" | "environment" | "general",
+  "region": "global" | "pakistan",
+  "origin": { "source", "date", "what_actually_happened" },
+  "mutation_chain": [ { "hop": int, "text", "type": "original_event" |
+     "fabricated_cause" | "recycled_old_media" | "exaggeration" | "stripped_context" } ],
+  "nutrition_label": { "evidence_quality": 0-100, "emotional_framing": 0-100,
+     "missing_context": 0-100, "ai_generated_likelihood": 0-100,
+     "manipulation_risk": 0-100 },
+  "fact_check_urls": [strings]
+}
+
+Create ~18 seeds. Use these REAL debunked examples as anchors (they're recognizable to
+these judges), then generate ~13 more in the same schema across climate/energy,
+Lahore civic (smog, floods, heatwaves, water), and general science:
+
+ANCHOR 1 — Spain/Portugal blackout:
+  canonical_claim: "The April 2025 Spain–Portugal blackout was caused by European
+  sanctions on Russia."
+  verdict: "false". origin: grid failure investigated as a rare technical/grid event;
+  no sanctions link; some viral posts reused unrelated 2020 coal-plant demolition
+  footage. mutation_chain: real outage → "caused by Russia sanctions" (fabricated_cause)
+  → "Spain destroyed its nuclear plants" using old footage (recycled_old_media).
+
+ANCHOR 2 — Barnacles on a whale:
+  canonical_claim: "Divers should remove barnacles from humpback whales to help them."
+  verdict: "misleading". origin: barnacles are a natural, mostly harmless commensal
+  relationship; removing them can harm the whale; the viral "rescue" framing is wrong.
+  mutation_chain: real photo of a diver near a whale → "this is a rescue we should all
+  support" (exaggeration/stripped_context).
+
+For the ~13 you generate: keep them plausible and clearly grounded. For any claim you
+cannot tie to a real fact-check, still fill fact_check_urls with a general literacy
+resource (e.g. AFP Fact Check, Climate Feedback, EDMO, NOAA) and keep the mutation_chain
+realistic. Prioritize Lahore civic claims (smog cause misattribution, fake flood
+warnings, heatwave hoaxes) so the same demo works for the Smart City Lahore hackathon.
+
+## FRONTEND — one page, three result blocks
+Header (always visible): the empowerment tagline above.
+Input: big textarea + an image upload button. One "Trace this claim" button.
+On result, show in this order:
+1. WHERE THIS CAME FROM — horizontal reactflow trail of the mutation_chain nodes,
+   left = origin, right = "what reached you". Color nodes by mutation type. Each node
+   shows its text. This is the signature visual — make it clean and readable.
+2. INFORMATION NUTRITION LABEL — a card with labeled horizontal bars for each
+   nutrition_label field (evidence quality, emotional framing, missing context,
+   AI-generated likelihood, manipulation risk). Instantly legible, food-label styling.
+3. MESSENGER-SAFE CORRECTION — a calm banner with the correction text + verdict chip +
+   fact_check_urls as links. Explicitly NOT alarmist, NOT accusatory.
+Below-threshold state: friendly "We haven't mapped this claim's origin yet — here's how
+to trace it yourself" with the self_check_steps.
+Add a secondary "Browse the claim database" view listing all seeds (GET /claims).
+
+## TONE / COPY
+Empowering, calm, non-paranoid. The product strengthens the user's judgment; it never
+scolds and never tells them who to distrust. Reflect that in every string.
+
+## BUILD ORDER (build + verify each step before moving on)
+1. Repo scaffold, README with the two run commands, backend+frontend skeleton, GET /health.
+2. seeds.json with all ~18 claims (2 anchors fully specified + 13 generated).
+3. Backend startup: load model, pre-compute + cache seed embeddings. GET /claims.
+4. POST /analyze text path: heuristic extraction → embed → match → assemble response.
+   Test with "Spain blackout was caused by Russia sanctions" and a paraphrase of it.
+5. Frontend input → render all three result blocks from the /analyze response.
+6. reactflow mutation trail polish.
+7. Image path: OCR → same pipeline. Test by uploading a screenshot of the Spain claim.
+8. Optional Anthropic-powered claim extraction + correction polish behind the env flag,
+   with the no-key fallback verified to still work.
+9. Empowerment copy + Tailwind styling pass so it looks demo-ready.
+10. DEMO.md: a 5-step live-demo script + the exact test inputs that show it working.
+
+## DEFINITION OF DONE
+- Fresh clone runs with the two documented commands, NO internet, NO API key.
+- Pasting the Spain claim (or a reworded version) returns the full lineage + label +
+  messenger-safe correction.
+- Uploading a screenshot of that claim returns the same result via OCR.
+- An unknown claim returns the graceful self-check fallback, not an error.
+- The mutation trail and nutrition label look clean enough to screenshot for the pitch.
