@@ -100,6 +100,11 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
+      // tesseract.js resolves its worker-script/node and core WASM files via paths
+      // relative to its own package directory at runtime; bundling it breaks that
+      // resolution, so it must run straight from node_modules.
+      "tesseract.js",
+      "tesseract.js-core",
     ],
     sourcemap: "linked",
     plugins: [

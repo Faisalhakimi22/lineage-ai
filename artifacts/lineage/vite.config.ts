@@ -5,13 +5,7 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
+const rawPort = process.env.PORT ?? '5174';
 
 const port = Number(rawPort);
 
@@ -19,13 +13,17 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
+const basePath = process.env.BASE_PATH ?? '/';
 
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
-}
+// When running the frontend and the API server as two separate local
+// processes, `/api` requests need to be forwarded to the API server. On Replit
+// the platform router already does this, so the proxy stays off unless
+// API_PROXY_TARGET is set.
+const apiProxyTarget = process.env.API_PROXY_TARGET;
+
+const proxy = apiProxyTarget
+  ? { '/api': { target: apiProxyTarget, changeOrigin: true } }
+  : undefined;
 
 export default defineConfig({
   base: basePath,
@@ -69,6 +67,7 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy,
     fs: {
       strict: true,
     },
@@ -77,5 +76,6 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy,
   },
 });

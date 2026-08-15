@@ -36,6 +36,7 @@ npm-debug.log
 yarn-error.log
 testem.log
 /typings
+**/.provenance-*.log
 
 # System Files
 .DS_Store
@@ -47,3 +48,10 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Secrets / local environment
+.env
+.env.*
+!.env.example
+*-service-account*.json
+serviceAccountKey*.json

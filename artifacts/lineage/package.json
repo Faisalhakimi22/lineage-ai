@@ -73,5 +73,9 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "firebase": "^12.17.1",
+    "reactflow": "^11.11.4"
   }
 }

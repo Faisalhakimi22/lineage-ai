@@ -1,0 +1,4 @@
+- [OpenRouter reasoning models leak chain-of-thought](openrouter-reasoning-models.md) — pass `reasoning: { exclude: true }` or content field gets polluted with CoT text.
+- [tesseract.js must be esbuild-external](tesseract-js-esbuild-bundling.md) — bundling breaks its runtime worker/WASM path resolution.
+- [Zod schema needs File/Blob types](zod-file-blob-types-tsconfig.md) — package tsconfig needs `"lib": ["dom", "es2022"]` or generated zod.instanceof(File) fails to typecheck.
+- [OpenRouter integration setup declined mid-task](openrouter-key-via-secrets-fallback.md) — fall back to requestSecrets for the user's own key rather than retrying or asking in chat.

@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: lineage
+    description: Claim investigation and curated-record operations
+  - name: account
+    description: Authenticated user profile and analysis history
 paths:
   /healthz:
     get:
@@ -24,13 +28,1868 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /lineages:
+    get:
+      operationId: listLineages
+      tags: [lineage]
+      summary: List investigation records
+      description: >
+        Returns the small, curated investigation library - explicitly not a
+        view of the whole internet. Each record carries a dataset_provenance
+        field stating whether its lineage is externally verified or is only an
+        illustrative teaching scenario. Illustrative origins and mutation
+        chains are not established evidence.
+      responses:
+        "200":
+          description: List of investigation records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineageSummary"
+  /lineages/{id}:
+    get:
+      operationId: getLineage
+      tags: [lineage]
+      summary: Get a single investigation record by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lineage detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lineage"
+        "404":
+          description: Lineage not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /analyze:
+    post:
+      operationId: analyzeText
+      tags: [lineage]
+      summary: Trace pasted text back to a documented lineage
+      description: >
+        Extracts the underlying claim from messy input and attempts to connect it
+        to a documented lineage. Never returns a truth verdict as the primary
+        result - it returns a trace status describing how confidently the claim
+        could be connected to recorded provenance. Authentication is optional;
+        when a valid bearer token is supplied the result is saved to the caller's
+        history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimTextInput"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /analyze/image:
+    post:
+      operationId: analyzeImage
+      tags: [lineage]
+      summary: Trace a screenshot or image (via OCR) back to a documented lineage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImageAnalysisInput"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeResult"
+        "400":
+          description: Invalid or unreadable image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Image too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [account]
+      summary: Get the authenticated user's profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /history:
+    get:
+      operationId: listAnalyses
+      tags: [account]
+      summary: List the authenticated user's previous analyses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Analysis history, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisSummary"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /history/{id}:
+    get:
+      operationId: getAnalysis
+      tags: [account]
+      summary: Reopen a previous analysis
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stored analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisRecord"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found, or not owned by the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAnalysis
+      tags: [account]
+      summary: Delete one of the authenticated user's analyses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found, or not owned by the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
+        llm_available:
+          type: boolean
+        semantic_matching_available:
+          type: boolean
+        auth_configured:
+          type: boolean
+        history_configured:
+          type: boolean
+        live_search_available:
+          type: boolean
       required:
         - status
-
+        - llm_available
+        - semantic_matching_available
+        - auth_configured
+        - history_configured
+        - live_search_available
+    ErrorCode:
+      type: string
+      description: Stable machine-readable error code
+      enum:
+        - VALIDATION_ERROR
+        - EMPTY_INPUT
+        - INPUT_TOO_LONG
+        - OCR_EMPTY
+        - OCR_FAILED
+        - UNSUPPORTED_MEDIA_TYPE
+        - FILE_TOO_LARGE
+        - UNAUTHENTICATED
+        - AUTH_NOT_CONFIGURED
+        - FORBIDDEN
+        - NOT_FOUND
+        - HISTORY_NOT_CONFIGURED
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+    ErrorResponse:
+      type: object
+      description: >
+        Structured API error. `code` is stable and safe to branch on; `message`
+        is human-readable and safe to display to end users.
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+            details:
+              type: [string, "null"]
+          required:
+            - code
+            - message
+            - details
+      required:
+        - error
+    DatasetProvenance:
+      type: string
+      description: >
+        Where this lineage record itself comes from. `externally_verified` means
+        the mutation chain is corroborated by named outside sources. `illustrative`
+        means the record was constructed by the project team to demonstrate a
+        realistic mutation pattern, and must never be presented as a documented
+        real-world investigation.
+      enum:
+        - externally_verified
+        - illustrative
+    SourceType:
+      type: string
+      enum:
+        - primary_document
+        - official_statement
+        - news_report
+        - fact_check
+        - research
+        - media_forensics
+        - reference_organisation
+    SourceAvailability:
+      type: string
+      description: >
+        Whether a usable link exists for this source. `organisation_only` means we
+        can name the body that holds the evidence but are not linking a specific
+        published item, and the UI must not imply a specific article exists.
+      enum:
+        - linked
+        - organisation_only
+        - unavailable
+    Source:
+      type: object
+      description: A single piece of provenance backing part of a lineage
+      properties:
+        publisher:
+          type: string
+        url:
+          type: [string, "null"]
+        published_date:
+          type: [string, "null"]
+        source_type:
+          $ref: "#/components/schemas/SourceType"
+        availability:
+          $ref: "#/components/schemas/SourceAvailability"
+        is_primary:
+          type: boolean
+          description: True if this is the body directly involved in the event, rather than a report about it
+        evidence_description:
+          type: string
+          description: What this source actually establishes - not a summary of the source itself
+      required:
+        - publisher
+        - url
+        - published_date
+        - source_type
+        - availability
+        - is_primary
+        - evidence_description
+    MutationType:
+      type: string
+      description: The kind of change applied at a hop in the chain
+      enum:
+        - original_event
+        - stripped_context
+        - exaggeration
+        - fabricated_cause
+        - recycled_old_media
+        - misattribution
+        - edited_media
+        - selective_evidence
+        - false_caption
+        - translation_distortion
+        - out_of_date_information
+        - false_quotation
+        - context_shift
+    MutationChainNode:
+      type: object
+      description: >
+        One hop in how information changed between the original event and the
+        version that reached the user. Every hop must be able to answer: what
+        changed, what it said before, what it says now, and why that matters.
+      properties:
+        hop:
+          type: number
+        type:
+          $ref: "#/components/schemas/MutationType"
+        text:
+          type: string
+          description: Short summary of the state of the information at this hop
+        what_changed:
+          type: string
+        previously:
+          type: [string, "null"]
+          description: What the earlier version conveyed. Null at the original event.
+        now:
+          type: string
+          description: What this version conveys
+        why_it_matters:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+      required:
+        - hop
+        - type
+        - text
+        - what_changed
+        - previously
+        - now
+        - why_it_matters
+        - sources
+    ProvenanceRelationshipType:
+      type: string
+      description: >
+        The evidence-supported relationship between two records. Temporal,
+        topical, or same-claim relationships are descriptive only; they do not
+        establish source-to-source transmission.
+      enum:
+        - temporal_order
+        - same_claim
+        - same_event
+        - related_claim
+        - derived_from
+        - reposted_from
+        - quoted_from
+        - corrected_by
+        - same_media
+    CuratedLineageRelationship:
+      type: object
+      description: >
+        An explicitly authored connection in a curated evidence graph. Array
+        ordering never creates an implicit connection.
+      properties:
+        id:
+          type: string
+        from_node_id:
+          type: string
+        to_node_id:
+          type: string
+        relationship:
+          $ref: "#/components/schemas/ProvenanceRelationshipType"
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        mutation_type:
+          oneOf:
+            - $ref: "#/components/schemas/MutationType"
+            - type: "null"
+        reason:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+      required:
+        - id
+        - from_node_id
+        - to_node_id
+        - relationship
+        - status
+        - confidence
+        - mutation_type
+        - reason
+        - sources
+    SignalLevel:
+      type: string
+      enum:
+        - low
+        - medium
+        - high
+        - unknown
+    SignalId:
+      type: string
+      enum:
+        - evidence_quality
+        - emotional_framing
+        - missing_context
+        - ai_generated_likelihood
+        - manipulation_risk
+    Signal:
+      type: object
+      description: >
+        An investigation signal, not a truth score. A signal says what a reader
+        should look into; it never asserts that a claim is true or false.
+      properties:
+        id:
+          $ref: "#/components/schemas/SignalId"
+        label:
+          type: string
+        level:
+          $ref: "#/components/schemas/SignalLevel"
+        score:
+          type: [number, "null"]
+          description: Optional 0-100 magnitude behind the level. Null when not assessed.
+        explanation:
+          type: string
+          description: Why this signal reads the way it does, in concrete terms
+        what_to_check:
+          type: string
+          description: The action a reader can take to investigate this signal themselves
+      required:
+        - id
+        - label
+        - level
+        - score
+        - explanation
+        - what_to_check
+    Origin:
+      type: object
+      description: >
+        The origin account stored with a record. It is established provenance
+        only when the parent record is externally_verified and carries specific
+        supporting sources; for illustrative records it is a teaching scenario.
+      properties:
+        source:
+          type: string
+        date:
+          type: [string, "null"]
+        what_actually_happened:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+      required:
+        - source
+        - date
+        - what_actually_happened
+        - sources
+    Verdict:
+      type: string
+      description: >
+        Characterisation of the documented record. Deliberately secondary to the
+        mutation chain - the product does not lead with this.
+      enum: ["false", "misleading", "missing_context", "true"]
+    Topic:
+      type: string
+      enum:
+        ["climate_energy", "civic_lahore", "environment", "general", "health"]
+    Region:
+      type: string
+      enum: ["global", "pakistan"]
+    LineageSummary:
+      type: object
+      description: Lightweight verified-case or illustrative-record summary for list views
+      properties:
+        id:
+          type: string
+        canonical_claim:
+          type: string
+        verdict:
+          $ref: "#/components/schemas/Verdict"
+        topic:
+          $ref: "#/components/schemas/Topic"
+        region:
+          $ref: "#/components/schemas/Region"
+        dataset_provenance:
+          $ref: "#/components/schemas/DatasetProvenance"
+        origin_source:
+          type: string
+        origin_date:
+          type: [string, "null"]
+        hop_count:
+          type: number
+        media_literacy_lesson:
+          type: string
+      required:
+        - id
+        - canonical_claim
+        - verdict
+        - topic
+        - region
+        - dataset_provenance
+        - origin_source
+        - origin_date
+        - hop_count
+        - media_literacy_lesson
+    Lineage:
+      type: object
+      description: >
+        A curated investigation record containing an origin account, mutation
+        sequence, and sources. dataset_provenance determines whether that
+        lineage is externally verified or merely illustrative and not
+        established evidence.
+      properties:
+        id:
+          type: string
+        canonical_claim:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        verdict:
+          $ref: "#/components/schemas/Verdict"
+        topic:
+          $ref: "#/components/schemas/Topic"
+        region:
+          $ref: "#/components/schemas/Region"
+        dataset_provenance:
+          $ref: "#/components/schemas/DatasetProvenance"
+        origin:
+          $ref: "#/components/schemas/Origin"
+        mutation_chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/MutationChainNode"
+        curated_relationships:
+          type: array
+          description: >
+            Explicit evidence relationships between origin/hop nodes. An empty
+            list means the curated record does not assert graph connectivity.
+          items:
+            $ref: "#/components/schemas/CuratedLineageRelationship"
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Signal"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        media_literacy_lesson:
+          type: string
+          description: The transferable lesson a reader can carry to the next claim they see
+      required:
+        - id
+        - canonical_claim
+        - aliases
+        - verdict
+        - topic
+        - region
+        - dataset_provenance
+        - origin
+        - mutation_chain
+        - curated_relationships
+        - signals
+        - sources
+        - media_literacy_lesson
+    TraceStatus:
+      type: string
+      description: >
+        How confidently the submitted claim could be connected to a documented
+        lineage. This is a statement about our evidence, never about the truth of
+        the claim. UNTRACED means "we could not establish a lineage", which is
+        emphatically not "this is false".
+      enum:
+        - TRACED
+        - PARTIALLY_TRACED
+        - UNTRACED
+    MatchingStrategy:
+      type: string
+      description: Which layer produced the final decision
+      enum:
+        - lexical
+        - semantic
+        - llm_adjudicated
+        - none
+    InputType:
+      type: string
+      enum:
+        - text
+        - image
+    SelfCheckStep:
+      type: object
+      description: A concrete verification action the reader can perform themselves
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        rationale:
+          type: string
+          description: Why this particular step is worth doing for this particular claim
+      required:
+        - id
+        - text
+        - rationale
+    MatchCandidate:
+      type: object
+      description: A lineage considered during matching, exposed so the user can see near-misses rather than only the winner
+      properties:
+        lineage_id:
+          type: string
+        canonical_claim:
+          type: string
+        confidence:
+          type: number
+      required:
+        - lineage_id
+        - canonical_claim
+        - confidence
+    LiveSearchStatus:
+      type: string
+      description: >
+        Whether a live web search was run for this analysis. A completed search
+        supplies leads to inspect; it is never an automated truth verdict.
+      enum:
+        - not_configured
+        - searched
+        - failed
+    LiveSearchSource:
+      type: object
+      description: A current web-search result. Its snippet is supplied by the search provider and is not a verified finding by Lineage.
+      properties:
+        provider_result_id:
+          type: [string, "null"]
+          description: Stable provider result identifier when one was supplied.
+        provider_score:
+          type: [number, "null"]
+          description: Search-provider relevance score, not a provenance or truth score.
+        title:
+          type: string
+        url:
+          type: string
+        description:
+          type: string
+        domain:
+          type: string
+        publisher:
+          type: [string, "null"]
+        published_date:
+          type: [string, "null"]
+        discovered_by_queries:
+          type: array
+          items:
+            type: string
+      required:
+        - provider_result_id
+        - provider_score
+        - title
+        - url
+        - description
+        - domain
+        - publisher
+        - published_date
+        - discovered_by_queries
+    LiveSearch:
+      type: object
+      description: >
+        Link-only live web retrieval for the extracted claim. It does not
+        establish truth, provenance, or a mutation chain.
+      properties:
+        provider:
+          type: string
+          enum: ["Brave Search", "Tavily"]
+        status:
+          $ref: "#/components/schemas/LiveSearchStatus"
+        query:
+          type: [string, "null"]
+          description: The exact claim wording sent to the search provider, or null when no search was run.
+        queries:
+          type: array
+          description: Every search query used to discover the returned leads.
+          items:
+            type: string
+        searched_at:
+          type: [string, "null"]
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveSearchSource"
+        note:
+          type: [string, "null"]
+      required:
+        - provider
+        - status
+        - query
+        - queries
+        - searched_at
+        - sources
+        - note
+    InvestigationStageStatus:
+      type: string
+      description: The evidence state of one runtime investigation stage.
+      enum:
+        - not_attempted
+        - in_progress
+        - established
+        - candidate
+        - insufficient_evidence
+        - blocked
+        - error
+    InvestigationStageId:
+      type: string
+      enum:
+        - claim_extracted
+        - live_search
+        - source_discovery
+        - earliest_source
+        - context_comparison
+        - mutation_detection
+        - origin_assessment
+        - lineage
+    InvestigationStage:
+      type: object
+      description: A backend-produced investigation outcome with the evidence that supports it.
+      properties:
+        id:
+          $ref: "#/components/schemas/InvestigationStageId"
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: [number, "null"]
+        reason:
+          type: string
+      required:
+        - id
+        - status
+        - evidenceIds
+        - confidence
+        - reason
+    AcquisitionStatus:
+      type: string
+      enum:
+        - not_attempted
+        - acquired
+        - partial
+        - failed
+        - blocked
+        - unsupported
+    EvidenceDateType:
+      type: string
+      enum:
+        - publication
+        - modified
+        - event
+        - upload
+        - crawl_index
+        - referenced_historical
+        - unknown
+    EvidenceDateSource:
+      type: string
+      enum:
+        - json_ld
+        - opengraph
+        - html_metadata
+        - article_metadata
+        - visible_text
+        - provider
+        - unknown
+    EvidenceSourceType:
+      type: string
+      enum:
+        - primary
+        - official
+        - academic
+        - fact_check
+        - news
+        - social
+        - reference
+        - other
+    EvidencePassage:
+      type: object
+      description: A bounded passage retained because it supports a claim, date, context, provenance, or metadata finding.
+      properties:
+        id:
+          type: string
+        sourceId:
+          type: string
+        text:
+          type: string
+        kind:
+          type: string
+          enum: [claim, context, date, provenance, metadata]
+        relevance:
+          type: number
+      required:
+        - id
+        - sourceId
+        - text
+        - kind
+        - relevance
+    EvidenceSnapshot:
+      type: object
+      description: Public metadata and bounded relevant passages for one acquired source. Full acquired page text is never returned.
+      properties:
+        id:
+          type: string
+        providerResultId:
+          type: [string, "null"]
+        originalUrl:
+          type: string
+        finalUrl:
+          type: [string, "null"]
+        canonicalUrl:
+          type: [string, "null"]
+        title:
+          type: string
+        domain:
+          type: string
+        publisher:
+          type: [string, "null"]
+        author:
+          type: [string, "null"]
+        publishedAt:
+          type: [string, "null"]
+        modifiedAt:
+          type: [string, "null"]
+        dateType:
+          $ref: "#/components/schemas/EvidenceDateType"
+        dateConfidence:
+          type: number
+        dateEvidence:
+          type: [string, "null"]
+        dateSource:
+          $ref: "#/components/schemas/EvidenceDateSource"
+        dateEvidencePassageId:
+          type: [string, "null"]
+        relevantPassages:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidencePassage"
+        sourceType:
+          $ref: "#/components/schemas/EvidenceSourceType"
+        providerScore:
+          type: [number, "null"]
+          description: Provider ranking signal retained for diagnostics only.
+        retrievalRelevance:
+          type: [number, "null"]
+        claimRelevance:
+          type: [number, "null"]
+          description: Relevance calculated from acquired content, never from provider rank alone.
+        evidenceRelevance:
+          type: [number, "null"]
+          description: Strength of the bounded acquired passages supporting the claim version.
+        acquisitionStatus:
+          $ref: "#/components/schemas/AcquisitionStatus"
+        acquisitionError:
+          type: [string, "null"]
+        extractionConfidence:
+          type: number
+        discoveredByQueries:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - providerResultId
+        - originalUrl
+        - finalUrl
+        - canonicalUrl
+        - title
+        - domain
+        - publisher
+        - author
+        - publishedAt
+        - modifiedAt
+        - dateType
+        - dateConfidence
+        - dateEvidence
+        - dateSource
+        - dateEvidencePassageId
+        - relevantPassages
+        - sourceType
+        - providerScore
+        - retrievalRelevance
+        - claimRelevance
+        - evidenceRelevance
+        - acquisitionStatus
+        - acquisitionError
+        - extractionConfidence
+        - discoveredByQueries
+    ClaimCertainty:
+      type: string
+      enum:
+        - possibility
+        - uncertain
+        - probable
+        - asserted
+        - confirmed
+        - unknown
+    CorrectionVerdict:
+      type: string
+      enum: ["true", "false", misleading, mixed, unverified, not_applicable]
+    SourceClaimVersion:
+      type: object
+      description: The claim form extracted from one acquired source, with explicit qualifiers and attribution.
+      properties:
+        id:
+          type: string
+        sourceId:
+          type: string
+        claim:
+          type: string
+        normalizedProposition:
+          type: string
+        narrator:
+          type: [string, "null"]
+        quotedSpeaker:
+          type: [string, "null"]
+        sourceStance:
+          type: string
+          enum: [asserts, reports, quotes, questions, corrects, rejects, neutral, unknown]
+        correctionVerdict:
+          $ref: "#/components/schemas/CorrectionVerdict"
+        claimType:
+          type: string
+          enum: [claim, quotation, headline, caption, correction, fact_check_framing, unknown]
+        evidencePassageId:
+          type: string
+        subject:
+          type: [string, "null"]
+        event:
+          type: [string, "null"]
+        eventDate:
+          type: [string, "null"]
+        location:
+          type: [string, "null"]
+        actor:
+          type: [string, "null"]
+        attribution:
+          type: [string, "null"]
+        causalLanguage:
+          type: [string, "null"]
+        certainty:
+          $ref: "#/components/schemas/ClaimCertainty"
+        captionContext:
+          type: [string, "null"]
+        qualifiers:
+          type: array
+          items:
+            type: string
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        extractionMethod:
+          type: string
+          enum: [deterministic, llm_assisted]
+      required:
+        - id
+        - sourceId
+        - claim
+        - normalizedProposition
+        - narrator
+        - quotedSpeaker
+        - sourceStance
+        - correctionVerdict
+        - claimType
+        - evidencePassageId
+        - subject
+        - event
+        - eventDate
+        - location
+        - actor
+        - attribution
+        - causalLanguage
+        - certainty
+        - captionContext
+        - qualifiers
+        - evidenceIds
+        - confidence
+        - extractionMethod
+    ComparisonChangeType:
+      type: string
+      enum:
+        - context_removed
+        - context_added
+        - cause_introduced
+        - cause_removed
+        - attribution_changed
+        - date_changed
+        - location_changed
+        - certainty_strengthened
+        - certainty_weakened
+        - quotation_changed
+        - caption_changed
+        - old_media_reused
+        - subject_changed
+        - selective_evidence
+    ComparisonChange:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/ComparisonChangeType"
+        before:
+          type: [string, "null"]
+        after:
+          type: [string, "null"]
+        explanation:
+          type: string
+        reason:
+          type: string
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+      required:
+        - type
+        - before
+        - after
+        - explanation
+        - evidenceIds
+        - evidence
+        - relationship
+        - beforeEvidence
+        - afterEvidence
+        - confidence
+    SourceComparison:
+      type: object
+      properties:
+        id:
+          type: string
+        fromSourceId:
+          type: string
+        toSourceId:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComparisonChange"
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        reason:
+          type: string
+        relationship:
+          $ref: "#/components/schemas/ProvenanceRelationshipAssessment"
+      required:
+        - id
+        - fromSourceId
+        - toSourceId
+        - changes
+        - evidenceIds
+        - confidence
+        - status
+        - reason
+        - relationship
+    LineageEdgeStatus:
+      type: string
+      enum: [established, candidate, insufficient_evidence]
+    LineageEdgeEvidenceRole:
+      type: string
+      enum: [relationship, before, after, occurrence, media_identity, source_reference]
+    LineageEdgeEvidence:
+      type: object
+      properties:
+        sourceId:
+          type: string
+        passageId:
+          type: string
+        exactText:
+          type: string
+        role:
+          $ref: "#/components/schemas/LineageEdgeEvidenceRole"
+      required:
+        - sourceId
+        - passageId
+        - exactText
+        - role
+    ProvenanceRelationshipAssessment:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/ProvenanceRelationshipType"
+        status:
+          $ref: "#/components/schemas/LineageEdgeStatus"
+        confidence:
+          type: number
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeEvidence"
+        reason:
+          type: string
+      required:
+        - type
+        - status
+        - confidence
+        - evidence
+        - reason
+    RuntimeMutationType:
+      type: string
+      enum:
+        - stripped_context
+        - exaggeration
+        - fabricated_cause
+        - recycled_old_media
+        - misattribution
+        - edited_media
+        - false_caption
+        - selective_evidence
+        - translation_distortion
+        - out_of_date_information
+        - false_quotation
+        - context_shift
+    DetectedMutation:
+      type: object
+      description: An evidence-linked change detected between two acquired source versions.
+      properties:
+        id:
+          type: string
+        fromSourceId:
+          type: string
+        toSourceId:
+          type: string
+        mutationType:
+          $ref: "#/components/schemas/RuntimeMutationType"
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeEvidence"
+        relationship:
+          $ref: "#/components/schemas/ProvenanceRelationshipAssessment"
+        beforeEvidence:
+          $ref: "#/components/schemas/LineageEdgeEvidence"
+        afterEvidence:
+          $ref: "#/components/schemas/LineageEdgeEvidence"
+        confidence:
+          type: number
+        status:
+          type: string
+          enum: [established, candidate]
+        explanation:
+          type: string
+        reason:
+          type: string
+      required:
+        - id
+        - fromSourceId
+        - toSourceId
+        - mutationType
+        - evidenceIds
+        - evidence
+        - relationship
+        - beforeEvidence
+        - afterEvidence
+        - confidence
+        - status
+        - explanation
+        - reason
+    TemporalFinding:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        sourceId:
+          type: [string, "null"]
+        date:
+          type: [string, "null"]
+        dateType:
+          $ref: "#/components/schemas/EvidenceDateType"
+        confidence:
+          type: [number, "null"]
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+      required:
+        - status
+        - sourceId
+        - date
+        - dateType
+        - confidence
+        - evidenceIds
+        - reason
+    OriginFacet:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        sourceId:
+          type: [string, "null"]
+        confidence:
+          type: [number, "null"]
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+      required:
+        - status
+        - sourceId
+        - confidence
+        - evidenceIds
+        - reason
+    OriginAssessment:
+      type: object
+      description: Separates the original event, earliest relevant source, misinformation origin, and a merely likely origin candidate.
+      properties:
+        originalEvent:
+          $ref: "#/components/schemas/OriginFacet"
+        earliestRelevantSource:
+          $ref: "#/components/schemas/TemporalFinding"
+        misinformationOrigin:
+          $ref: "#/components/schemas/OriginFacet"
+        likelyOriginCandidate:
+          $ref: "#/components/schemas/OriginFacet"
+      required:
+        - originalEvent
+        - earliestRelevantSource
+        - misinformationOrigin
+        - likelyOriginCandidate
+    RuntimeLineageNode:
+      type: object
+      properties:
+        id:
+          type: string
+        sourceId:
+          type: string
+        kind:
+          type: string
+          enum: [source, submitted_claim, submitted_occurrence]
+        claim:
+          type: string
+        url:
+          type: [string, "null"]
+        date:
+          type: [string, "null"]
+        dateConfidence:
+          type: number
+        evidenceIds:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - sourceId
+        - kind
+        - claim
+        - url
+        - date
+        - dateConfidence
+        - evidenceIds
+    RuntimeLineageEdge:
+      type: object
+      properties:
+        id:
+          type: string
+        fromSourceId:
+          type: string
+        toSourceId:
+          type: string
+        relationship:
+          $ref: "#/components/schemas/ProvenanceRelationshipType"
+        status:
+          $ref: "#/components/schemas/LineageEdgeStatus"
+        mutationType:
+          oneOf:
+            - $ref: "#/components/schemas/RuntimeMutationType"
+            - type: "null"
+        mutationConfidence:
+          type: [number, "null"]
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeEvidence"
+        beforeEvidence:
+          oneOf:
+            - $ref: "#/components/schemas/LineageEdgeEvidence"
+            - type: "null"
+        afterEvidence:
+          oneOf:
+            - $ref: "#/components/schemas/LineageEdgeEvidence"
+            - type: "null"
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        explanation:
+          type: string
+        reason:
+          type: string
+      required:
+        - id
+        - fromSourceId
+        - toSourceId
+        - relationship
+        - status
+        - mutationType
+        - mutationConfidence
+        - evidence
+        - beforeEvidence
+        - afterEvidence
+        - evidenceIds
+        - confidence
+        - explanation
+        - reason
+    RuntimeLineageGraph:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/InvestigationStageStatus"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeLineageNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuntimeLineageEdge"
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: [number, "null"]
+        reason:
+          type: string
+        submittedOccurrenceConnected:
+          type: boolean
+        establishedTransitionCount:
+          type: number
+          minimum: 0
+        requiredTransitionCount:
+          type: number
+          minimum: 0
+      required:
+        - status
+        - nodes
+        - edges
+        - evidenceIds
+        - confidence
+        - reason
+        - submittedOccurrenceConnected
+        - establishedTransitionCount
+        - requiredTransitionCount
+    KnownRecordMatch:
+      type: object
+      description: Separates curated-library similarity from eligibility as an externally verified fast path.
+      properties:
+        matched:
+          type: boolean
+        lineageId:
+          type: [string, "null"]
+        datasetProvenance:
+          oneOf:
+            - $ref: "#/components/schemas/DatasetProvenance"
+            - type: "null"
+        similarity:
+          type: number
+        eligibleAsVerifiedFastPath:
+          type: boolean
+      required:
+        - matched
+        - lineageId
+        - datasetProvenance
+        - similarity
+        - eligibleAsVerifiedFastPath
+    KnownRecordScores:
+      type: object
+      description: >
+        Evidence measures for the curated known-case path only. These values
+        never contribute to the live provenance scores.
+      properties:
+        provenanceConfidence:
+          type: [number, "null"]
+        mutationConfidence:
+          type: [number, "null"]
+        originConfidence:
+          type: [number, "null"]
+        lineageCompleteness:
+          type: number
+          minimum: 0
+          maximum: 1
+      required:
+        - provenanceConfidence
+        - mutationConfidence
+        - originConfidence
+        - lineageCompleteness
+    ImageEvidence:
+      type: object
+      description: Metadata captured for an uploaded image. Reverse-image search is not yet implemented.
+      properties:
+        id:
+          type: string
+        sha256:
+          type: string
+        perceptualHash:
+          type: [string, "null"]
+        width:
+          type: [number, "null"]
+        height:
+          type: [number, "null"]
+        mediaType:
+          type: [string, "null"]
+        byteLength:
+          type: number
+        originalFilename:
+          type: [string, "null"]
+        extractedText:
+          type: string
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        reverseImageSearchStatus:
+          type: string
+          enum: [not_implemented]
+      required:
+        - id
+        - sha256
+        - perceptualHash
+        - width
+        - height
+        - mediaType
+        - byteLength
+        - originalFilename
+        - extractedText
+        - evidenceIds
+        - reverseImageSearchStatus
+    SubmittedOccurrenceEvidenceType:
+      type: string
+      enum:
+        - supplied_url
+        - screenshot
+        - image
+        - source_post
+        - quoted_context
+        - source_metadata
+    SubmittedOccurrence:
+      type: object
+      description: >
+        A request-specific occurrence of the submitted claim. Normalized claim
+        text, search results, and wording similarity are not occurrence
+        evidence and cannot populate this object.
+      properties:
+        id:
+          type: string
+        claim:
+          type: string
+        exactText:
+          type: string
+        normalizedProposition:
+          type: string
+        evidenceType:
+          $ref: "#/components/schemas/SubmittedOccurrenceEvidenceType"
+        sourceUrl:
+          type: [string, "null"]
+        sourceIdentifier:
+          type: [string, "null"]
+        timestamp:
+          type: [string, "null"]
+        sourceContext:
+          type: [string, "null"]
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeEvidence"
+        sourceRelationship:
+          oneOf:
+            - $ref: "#/components/schemas/SubmittedOccurrenceSourceRelationship"
+            - type: "null"
+      required:
+        - id
+        - claim
+        - exactText
+        - normalizedProposition
+        - evidenceType
+        - sourceUrl
+        - sourceIdentifier
+        - timestamp
+        - sourceContext
+        - evidenceIds
+        - confidence
+        - evidence
+        - sourceRelationship
+    SubmittedOccurrenceSourceRelationship:
+      type: object
+      properties:
+        fromSourceId:
+          type: string
+        relationship:
+          $ref: "#/components/schemas/ProvenanceRelationshipType"
+        status:
+          $ref: "#/components/schemas/LineageEdgeStatus"
+        confidence:
+          type: number
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeEvidence"
+        reason:
+          type: string
+      required:
+        - fromSourceId
+        - relationship
+        - status
+        - confidence
+        - evidence
+        - reason
+    AnalyzeResult:
+      type: object
+      description: >
+        The outcome of attempting to trace a submitted claim. Deliberately
+        separates what was found, what was not found, and what remains uncertain.
+      properties:
+        extracted_claim:
+          type: string
+        input_type:
+          $ref: "#/components/schemas/InputType"
+        trace_status:
+          $ref: "#/components/schemas/TraceStatus"
+        confidence:
+          type: number
+          description: Legacy alias for librarySimilarity. It is not a truth or provenance score.
+        matching_strategy:
+          $ref: "#/components/schemas/MatchingStrategy"
+        lineage:
+          oneOf:
+            - $ref: "#/components/schemas/Lineage"
+            - type: "null"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchCandidate"
+        live_search:
+          $ref: "#/components/schemas/LiveSearch"
+        knownRecordMatch:
+          $ref: "#/components/schemas/KnownRecordMatch"
+        knownRecordStages:
+          type: array
+          description: Curated known-case evidence stages, kept separate from the live investigation stages.
+          items:
+            $ref: "#/components/schemas/InvestigationStage"
+        knownRecordScores:
+          $ref: "#/components/schemas/KnownRecordScores"
+        liveInvestigation:
+          type: boolean
+          description: True when this response includes a runtime web-evidence investigation rather than only a curated-library lookup.
+        evidenceSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSnapshot"
+        sourceVersions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceClaimVersion"
+        comparisons:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceComparison"
+        mutations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectedMutation"
+        originAssessment:
+          $ref: "#/components/schemas/OriginAssessment"
+        dynamicLineage:
+          $ref: "#/components/schemas/RuntimeLineageGraph"
+        investigationStages:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvestigationStage"
+        librarySimilarity:
+          type: number
+          description: Similarity between the submitted claim and the closest curated-library record; not a truth score.
+        sourceRelevance:
+          type: [number, "null"]
+        provenanceConfidence:
+          type: [number, "null"]
+        mutationConfidence:
+          type: [number, "null"]
+        originConfidence:
+          type: [number, "null"]
+        lineageCompleteness:
+          type: number
+          description: Evidence-backed completeness of the runtime lineage, from 0 to 1.
+        imageEvidence:
+          oneOf:
+            - $ref: "#/components/schemas/ImageEvidence"
+            - type: "null"
+        submittedOccurrence:
+          oneOf:
+            - $ref: "#/components/schemas/SubmittedOccurrence"
+            - type: "null"
+        what_we_found:
+          type: array
+          items:
+            type: string
+        what_we_did_not_find:
+          type: array
+          items:
+            type: string
+        uncertainty_notes:
+          type: array
+          items:
+            type: string
+        messenger_safe_explanation:
+          type: [string, "null"]
+        self_check_steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelfCheckStep"
+        analysis_id:
+          type: [string, "null"]
+          description: Set when the result was saved to the caller's history
+      required:
+        - extracted_claim
+        - input_type
+        - trace_status
+        - confidence
+        - matching_strategy
+        - lineage
+        - candidates
+        - live_search
+        - knownRecordMatch
+        - knownRecordStages
+        - knownRecordScores
+        - liveInvestigation
+        - evidenceSnapshots
+        - sourceVersions
+        - comparisons
+        - mutations
+        - originAssessment
+        - dynamicLineage
+        - investigationStages
+        - librarySimilarity
+        - sourceRelevance
+        - provenanceConfidence
+        - mutationConfidence
+        - originConfidence
+        - lineageCompleteness
+        - imageEvidence
+        - submittedOccurrence
+        - what_we_found
+        - what_we_did_not_find
+        - uncertainty_notes
+        - messenger_safe_explanation
+        - self_check_steps
+        - analysis_id
+    ClaimTextInput:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        occurrence:
+          $ref: "#/components/schemas/SubmittedOccurrenceInput"
+      required:
+        - text
+    SubmittedOccurrenceInput:
+      type: object
+      additionalProperties: false
+      description: >
+        Optional request-specific source context for the exact submitted
+        occurrence. Supplying only claim wording is insufficient.
+      properties:
+        sourceUrl:
+          type: [string, "null"]
+          maxLength: 2048
+        sourceName:
+          type: [string, "null"]
+          maxLength: 300
+        sourcePostId:
+          type: [string, "null"]
+          maxLength: 500
+        observedAt:
+          type: [string, "null"]
+        exactQuote:
+          type: [string, "null"]
+          maxLength: 5000
+        context:
+          type: [string, "null"]
+          maxLength: 5000
+    ImageAnalysisInput:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+      required:
+        - image
+    UserProfile:
+      type: object
+      properties:
+        userId:
+          type: string
+        email:
+          type: [string, "null"]
+        displayName:
+          type: [string, "null"]
+        photoURL:
+          type: [string, "null"]
+        createdAt:
+          type: string
+        lastLoginAt:
+          type: string
+      required:
+        - userId
+        - email
+        - displayName
+        - photoURL
+        - createdAt
+        - lastLoginAt
+    AnalysisSummary:
+      type: object
+      description: Row in the user's history list
+      properties:
+        id:
+          type: string
+        inputType:
+          $ref: "#/components/schemas/InputType"
+        extractedClaim:
+          type: string
+        traceStatus:
+          $ref: "#/components/schemas/TraceStatus"
+        confidence:
+          type: number
+        matchedLineageId:
+          type: [string, "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - inputType
+        - extractedClaim
+        - traceStatus
+        - confidence
+        - matchedLineageId
+        - createdAt
+    AnalysisRecord:
+      type: object
+      description: A stored analysis belonging to one user
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        inputType:
+          $ref: "#/components/schemas/InputType"
+        originalInput:
+          type: string
+          description: For images this is the OCR-extracted text, never the image bytes
+        result:
+          $ref: "#/components/schemas/AnalyzeResult"
+        createdAt:
+          type: string
+      required:
+        - id
+        - userId
+        - inputType
+        - originalInput
+        - result
+        - createdAt
