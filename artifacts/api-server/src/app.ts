@@ -30,7 +30,7 @@ app.use(cors());
 app.use(express.json({ limit: "64kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
-app.use("/api", router);
+app.use(["/api", "/"], router);
 
 // Must be registered last: Express selects error middleware by arity and
 // order, so anything after this would never see the error.
