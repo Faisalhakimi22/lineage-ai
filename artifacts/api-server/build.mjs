@@ -15,7 +15,15 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    // `index.ts` is the standalone server (calls `app.listen`); `app.ts` is the
+    // bare Express app, bundled separately as `dist/app.mjs` so Vercel's
+    // serverless function can import a self-contained artifact instead of the
+    // raw workspace TypeScript graph (which @vercel/node type-checks under
+    // NodeNext and this bundler-resolution monorepo can't satisfy).
+    entryPoints: [
+      path.resolve(artifactDir, "src/index.ts"),
+      path.resolve(artifactDir, "src/app.ts"),
+    ],
     platform: "node",
     bundle: true,
     format: "esm",

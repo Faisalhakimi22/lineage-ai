@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "node -e \"const fs=require('node:fs'); for (const file of ['package-lock.json','yarn.lock']) fs.rmSync(file,{force:true}); if (!process.env.npm_config_user_agent?.startsWith('pnpm/')) { console.error('Use pnpm instead'); process.exit(1); }\"",
-    "build": "pnpm run typecheck && pnpm --filter @workspace/lineage run build",
+    "build": "pnpm run typecheck && pnpm --filter @workspace/lineage run build && pnpm --filter @workspace/api-server run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --if-present run typecheck"
   },
@@ -25,6 +25,10 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^25.3.3",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }
