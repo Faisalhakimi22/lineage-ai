@@ -1,18 +1,32 @@
-import { createWorker } from "tesseract.js";
 import { ApiError } from "./errors";
 import { assertDecodableImage } from "./image-validation";
 import { logger } from "./logger";
+import { positiveIntegerEnv } from "./rate-limit";
 
-const OCR_TIMEOUT_MS = Number(process.env["OCR_TIMEOUT_MS"] ?? 20_000);
-const MAX_CONCURRENT_OCR = Number(process.env["OCR_MAX_CONCURRENT"] ?? 2);
+// tesseract.js is loaded lazily (see extractTextFromImage), never at module
+// load. It is marked `external` in the esbuild bundle, so a top-level
+// `import { createWorker } from "tesseract.js"` compiles to a `require` that
+// runs the instant this module is first imported. On Vercel that is at function
+// *boot* for every route — this file sits in the /analyze import graph — so if
+// the file tracer fails to include the externalized package (a known pnpm +
+// sibling-bundle hazard) the require throws and the whole API answers 500 on
+// every endpoint, including /healthz. Deferring the import keeps any such
+// failure contained to image requests, surfaced as a normal OCR error.
+type CreateWorker = (typeof import("tesseract.js"))["createWorker"];
 
-if (!Number.isSafeInteger(OCR_TIMEOUT_MS) || OCR_TIMEOUT_MS < 1) {
-  throw new Error("OCR_TIMEOUT_MS must be a positive integer.");
-}
-
-if (!Number.isSafeInteger(MAX_CONCURRENT_OCR) || MAX_CONCURRENT_OCR < 1) {
-  throw new Error("OCR_MAX_CONCURRENT must be a positive integer.");
-}
+// Parsed via positiveIntegerEnv (not a bare Number()) so an empty env value —
+// e.g. a key added in the Vercel dashboard with a blank value — falls back to
+// the default instead of becoming 0 and throwing here at module load.
+const OCR_TIMEOUT_MS = positiveIntegerEnv(
+  process.env["OCR_TIMEOUT_MS"],
+  20_000,
+  "OCR_TIMEOUT_MS",
+);
+const MAX_CONCURRENT_OCR = positiveIntegerEnv(
+  process.env["OCR_MAX_CONCURRENT"],
+  2,
+  "OCR_MAX_CONCURRENT",
+);
 
 let activeOcrJobs = 0;
 
@@ -68,9 +82,12 @@ export async function extractTextFromImage(buffer: Buffer): Promise<string> {
   }
 
   activeOcrJobs += 1;
-  let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
+  let worker: Awaited<ReturnType<CreateWorker>> | null = null;
 
   try {
+    // Externalized dependency, imported here so a resolution failure degrades
+    // to an OCR error for this one request instead of crashing the process.
+    const { createWorker } = await import("tesseract.js");
     worker = await createWorker("eng");
     // Recognition is unbounded by default: a large or adversarially-crafted
     // image can occupy a worker indefinitely, which on a single-instance demo
