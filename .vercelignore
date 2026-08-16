@@ -1,0 +1,3 @@
+artifacts/api-server/dist
+artifacts/api-server/*.log
+artifacts/mockup-sandbox
